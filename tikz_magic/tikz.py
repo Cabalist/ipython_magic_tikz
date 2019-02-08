@@ -1,16 +1,14 @@
-#via https://github.com/robjstan/tikzmagic
-import subprocess
+# via https://github.com/robjstan/tikzmagic
+import os
 import shlex
 import shutil
+import subprocess
 import tempfile
 from argparse import ArgumentParser
-from base64 import b64encode
-from os.path import isfile
-from os import getcwd
 
-from IPython.core.magic import (
-    magics_class, line_magic, line_cell_magic, Magics)
-from IPython.core.display import Image, HTML
+from IPython import get_ipython
+from IPython.core.display import Image
+from IPython.core.magic import Magics, line_cell_magic, magics_class
 
 LATEX_TEMPLATE = r'''
 \documentclass[tikz,border={border}]{{standalone}}
@@ -21,17 +19,16 @@ LATEX_TEMPLATE = r'''
 {content}
 \end{{document}}'''
 
-        
+
 @magics_class
 class TikzMagic(Magics):
     def __init__(self, shell, cache_display_data=False):
         super(TikzMagic, self).__init__(shell)
         self.cache_display_data = cache_display_data
 
-
     @line_cell_magic
-    def tikz(self,line, cell=''):
-        '''Format TikZ commands into a LaTeX document, compile, and convert.'''
+    def tikz(self, line, cell=''):
+        """Format TikZ commands into a LaTeX document, compile, and convert."""
         parser = ArgumentParser()
         parser.add_argument('-p', '--latex_packages', default='')
         parser.add_argument('-x', '--latex_preamble', default='')
@@ -51,12 +48,12 @@ class TikzMagic(Magics):
         # prepare latex from template
         if args.input_file:
             # add content from input_file before rest of cell
-            cell += r'\input{{{cwd}/{file}}}'.format(cwd=getcwd(),
+            cell += r'\input{{{cwd}/{file}}}'.format(cwd=os.getcwd(),
                                                      file=args.input_file)
 
         if args.variable:
             cell = self.shell.user_ns[args.variable]
-            
+
         if args.wrap_env:
             cell = r'\begin{tikzpicture}' + cell + r'\end{tikzpicture}'
 
@@ -71,53 +68,62 @@ class TikzMagic(Magics):
 
         # add current working directory to any export_file path
         if args.export_file:
-            args.export_file = getcwd() + '/' + args.export_file
+            args.export_file = os.path.join(os.getcwd(), args.export_file)
 
         # compile and convert, returning Image data
-        return latex2image(latex, int(args.scale*300), args.export_file)
+        return latex2image(latex, int(args.scale * 300), args.export_file)
+
 
 def latex2image(latex, density, export_file=None):
-    '''Compile LaTeX to PDF, and convert to PNG.'''
+    """Compile LaTeX to PDF, and convert to PNG."""
+
+    temp_dir = tempfile.mkdtemp()
+
     try:
         # make a temp directory, and name temp files
-        temp_dir = tempfile.mkdtemp()
-        temp_tex = temp_dir + '/tikzfile.tex'
-        temp_pdf = temp_dir + '/tikzfile.pdf'
-        temp_png = temp_dir + '/tikzfile.png'
+        temp_tex = os.path.join(temp_dir, 'tikzfile.tex')
+        temp_pdf = os.path.join(temp_dir, 'tikzfile.pdf')
+        temp_png = os.path.join(temp_dir, 'tikzfile.png')
 
-        open(temp_tex, 'w').write(latex)
+        with open(temp_tex, 'w') as out:
+            out.write(latex)
+
         # run LaTeX to generate a PDF
         sh_latex(in_file=temp_tex, out_dir=temp_dir)
 
-        if not isfile(temp_pdf):
+        if not os.path.isfile(temp_pdf):
             raise Exception('pdflatex did not produce a PDF file.')
 
         if export_file:
             shutil.copyfile(temp_pdf, export_file)
 
-         # convert PDF to PNG
+        # convert PDF to PNG
         sh_convert(in_file=temp_pdf, out_file=temp_png, density=density)
-        
-        #The Image(data=png) thing doesn't work..?
-        png = b64encode(open(temp_png, "rb").read())
-        #return Image(data=png)
+
+        # The Image(data=png) thing doesn't work..?
+        # png = b64encode(open(temp_png, "rb").read())
+        # return Image(data=png)
         return Image(filename=temp_png)
-        
+
     finally:
         # remove temp directory
         shutil.rmtree(temp_dir)
 
+
 # functions to run command line scripts
 def sh_latex(in_file, out_dir):
-    '''Compile XeLaTeX to generate a PDF.'''
+    """Compile XeLaTeX to generate a PDF."""
     subprocess.call(['xelatex', '-output-directory', out_dir, in_file])
 
+
 def sh_convert(in_file, out_file, density=96):
-    '''Use ImageMagick to convert PDF to PNG.'''
+    """Use ImageMagick to convert PDF to PNG."""
     subprocess.call(['convert', '-density', str(density), in_file, out_file])
+
 
 def load_ipython_extension(ipython):
     ipython.register_magics(TikzMagic)
-    
+
+
 ip = get_ipython()
 ip.register_magics(TikzMagic)
