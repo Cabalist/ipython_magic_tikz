@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 from argparse import ArgumentParser
 
-from IPython import get_ipython
 from IPython.core.display import Image
 from IPython.core.magic import Magics, line_cell_magic, magics_class
 
